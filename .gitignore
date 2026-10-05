@@ -9,6 +9,8 @@ cabal.project.local~
 
 # Артефакты CI
 report.json
+smoke.log
+repl.log
 report.md
 comment.md
 

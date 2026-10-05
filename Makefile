@@ -8,12 +8,23 @@
 # make check FILE=путь.lam    проверить другой .lam-файл (без манифеста TASKS), например учебный
 # make submit [MSG="…"]       сборка, проверка для сведения, коммит и пуш
 # make release MSG="…"        для преподавателей: обновить решения и опубликовать шаблон
+# make check-report           преподавательская проверка статусов заглушек в report.json
+# make verify-build           строгая сборка всех компонентов без публикации
 
 ONLY ?=
 MSG ?=
 FILE ?=
+.DEFAULT_GOAL := help
 
 .PHONY: help build repl lint test check submit release
+
+.PHONY: check-report
+check-report:
+	python3 test/check-report.py
+
+.PHONY: verify-build
+verify-build:
+	cabal build all --ghc-options=-Werror
 
 help:
 	@sed -n '3,10p' Makefile | sed 's/^# //'
