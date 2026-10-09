@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
 {-# OPTIONS_GHC -Wno-unused-matches #-}
--- | Домашка 5. Задачи для уверенности: около двух дополнительных часов.
+-- | Домашка 5. Задачи для уверенности.
 module Level2 where
 
 import MetaUtils (todo)

@@ -10,10 +10,15 @@
 # make release MSG="…"        для преподавателей: обновить решения и опубликовать шаблон
 # make check-report           преподавательская проверка статусов заглушек в report.json
 # make verify-build           строгая сборка всех компонентов без публикации
+# make release-status         состояние GitHub и обновления внутреннего шаблона
+# make public-template PUBLIC_REPO=организация/имя  создать и проверить публичный шаблон
 
 ONLY ?=
 MSG ?=
 FILE ?=
+GH ?= gh
+PUBLIC_REPO ?=
+SOLUTIONS_SOURCE ?=
 .DEFAULT_GOAL := help
 
 .PHONY: help build repl lint test check submit release
@@ -74,19 +79,50 @@ submit: build
 	git push origin main
 	@echo "Отчёт CI появится в вашем pull request."
 
-# Для преподавателей. main — версия для студентов, solutions — эталон; решения в main не вливаются,
-# ветка solutions только проверяется строгим прогоном и пушится в origin. Ожидает remote origin
-# (репозиторий домашки), remote template (внутренний шаблон) и remote public (шаблон в организации студентов).
+# Для преподавателей. origin с эталоном приватный, PUBLIC_REPO — публичный шаблон студентов.
+# SOLUTIONS_SOURCE — необязательная папка эталона: из неё обновляются только src/Level*.hs.
+.PHONY: release-status public-template
+release-status:
+	git fetch origin main solutions
+	git fetch template main
+	$(GH) repo view --json nameWithOwner,isPrivate,url
+	git log --oneline main..template/main
+	git diff --stat main...template/main
+
+public-template:
+	@test -n "$(PUBLIC_REPO)" || { echo 'Укажите PUBLIC_REPO=организация/имя'; exit 1; }
+	@test "$$($(GH) repo view --json isPrivate --jq '.isPrivate')" = true
+	@if ! $(GH) repo view "$(PUBLIC_REPO)" --json nameWithOwner >/dev/null 2>&1; then \
+	  $(GH) repo create "$(PUBLIC_REPO)" --public; \
+	fi
+	@test "$$($(GH) repo view "$(PUBLIC_REPO)" --json isPrivate --jq '.isPrivate')" = false
+	$(GH) repo edit "$(PUBLIC_REPO)" --template
+	@if ! git remote get-url public >/dev/null 2>&1; then git remote add public "git@github.com:$(PUBLIC_REPO).git"; fi
+	@test "$$(git remote get-url public)" = "git@github.com:$(PUBLIC_REPO).git"
+	$(GH) repo view "$(PUBLIC_REPO)" --json nameWithOwner,isPrivate,isTemplate,url
+
 release:
+	@test "$$(git branch --show-current)" = main
+	@test -n "$(PUBLIC_REPO)" || { echo 'Укажите PUBLIC_REPO=организация/имя'; exit 1; }
+	@test "$$($(GH) repo view --json isPrivate --jq '.isPrivate')" = true
+	@if [ -n "$(SOLUTIONS_SOURCE)" ]; then test -d "$(SOLUTIONS_SOURCE)/src"; fi
 	git config pull.rebase false
 	git pull template main --no-edit
 	$(MAKE) --no-print-directory lint
-	cabal build all --ghc-options=-Werror
-	git push origin main:main
-	git push public main:main
+	$(MAKE) --no-print-directory verify-build
+	$(MAKE) --no-print-directory test || $(MAKE) --no-print-directory check-report
+	git diff --check
+	@if ! git diff --quiet; then git commit -am "[no ci] $(or $(MSG),Update homework template)"; fi
 	git checkout solutions
+	git checkout main -- Makefile README.md
+	@if [ -n "$(SOLUTIONS_SOURCE)" ]; then cp "$(SOLUTIONS_SOURCE)"/src/Level*.hs src/; fi
 	$(MAKE) --no-print-directory lint
+	$(MAKE) --no-print-directory verify-build
 	HASKELL_TEST_STRICT=1 $(MAKE) --no-print-directory test
-	git commit -am "[no ci] $(or $(MSG),Update)" --allow-empty
+	git diff --check
+	@if ! git diff --quiet HEAD; then git commit -am "[no ci] $(or $(MSG),Update homework solutions)"; fi
 	git push origin solutions:solutions
 	git checkout main
+	$(MAKE) --no-print-directory public-template PUBLIC_REPO="$(PUBLIC_REPO)"
+	git push origin main:main
+	git push public main:main
